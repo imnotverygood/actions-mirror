@@ -9,7 +9,7 @@ A private mirror repository for commonly used GitHub Actions, maintained for use
 | Action | Original Repository | Current Version | Status | Modified |
 |--------|-------------------|-----------------|---------|-----------|
 | `action-gh-release` | [Link](https://github.com/softprops/action-gh-release) | v1.0.0 | ✅ | No |
-| `action-zip` | [Link](https://github.com/vimtor/action-zip) | v1.0.0 | ✅ | No |
+| `action-zip` | [Link](https://github.com/vimtor/action-zip) | v1.2 | ✅ | No |
 | `actions-status-discord` | [Link](https://github.com/sarisia/actions-status-discord) | v1.0.0 | ✅ | No |
 | `cache` | [Link](https://github.com/imnotverygood/cache) | v1.0.0 | ✅ | No |
 | `unity-builder` | [Link](https://github.com/game-ci/unity-builder) | v1.0.0 | ✅ | No |

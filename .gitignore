@@ -1,0 +1,28 @@
+# Temporary files from workflow
+status.json
+filtered.json
+table.md
+README.tmp
+*_temp/
+
+# Mirror version tracking files (if you want to track these in git, remove these lines)
+# .mirror-version
+# .mirror-tag
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# GitHub Actions artifacts
+/dist/
+/node_modules/

@@ -1,0 +1,341 @@
+name: Update Action Mirrors
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Specific action to update (default: all)"
+        required: false
+        type: string
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up mirror configuration
+        id: set-matrix
+        run: |
+          if [ -n "${{ github.event.inputs.action }}" ]; then
+            jq --arg action "${{ github.event.inputs.action }}" \
+              '.mirrors | map(select(.name == $action))' mirror-config.json > filtered.json
+            mv filtered.json mirror-config.json
+          else
+            jq '.mirrors' mirror-config.json > filtered.json
+            mv filtered.json mirror-config.json
+          fi
+
+          echo "matrix=$(cat mirror-config.json | jq -c .)" >> $GITHUB_OUTPUT
+
+  update-mirror:
+    needs: check-updates
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        mirror: ${{ fromJson(needs.check-updates.outputs.matrix) }}
+      max-parallel: 4
+    outputs:
+      status: ${{ steps.status-output.outputs.status }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Check for existing PR
+        id: check-pr
+        run: |
+          PR_EXISTS=$(gh pr list --state open --json headRefName,number \
+            --jq '.[] | select(.headRefName | startswith("update-${{ matrix.mirror.name }}")) | .number')
+
+          if [ -n "$PR_EXISTS" ]; then
+            echo "pr_exists=true" >> $GITHUB_OUTPUT
+            echo "pr_number=$PR_EXISTS" >> $GITHUB_OUTPUT
+            
+            BRANCH_NAME=$(gh pr view $PR_EXISTS --json headRefName --jq '.headRefName')
+            echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          else
+            echo "pr_exists=false" >> $GITHUB_OUTPUT
+            echo "branch_name=update-${{ matrix.mirror.name }}-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fetch upstream latest tag
+        id: upstream-check
+        run: |
+          LATEST_TAG=$(git ls-remote --tags ${{ matrix.mirror.upstream }} | \
+            grep -v '\^{}' | \
+            sed 's/.*\t//' | \
+            sed 's/^refs\/tags\///' | \
+            grep -E '^v?[0-9]+\.[0-9]+' | \
+            sort -V | \
+            tail -n1 || echo "no-tag")
+
+          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+          if [ "$LATEST_TAG" != "no-tag" ]; then
+            # Try to get the commit from the annotated tag first, then fall back to lightweight tag
+            LATEST_COMMIT=$(git ls-remote ${{ matrix.mirror.upstream }} refs/tags/$LATEST_TAG^{} 2>/dev/null | cut -f1 || \
+                           git ls-remote ${{ matrix.mirror.upstream }} refs/tags/$LATEST_TAG | cut -f1)
+          else
+            LATEST_COMMIT=$(git ls-remote ${{ matrix.mirror.upstream }} refs/heads/${{ matrix.mirror.branch }} | cut -f1)
+          fi
+
+          echo "latest_commit=$LATEST_COMMIT" >> $GITHUB_OUTPUT
+
+          if [ -f "${{ matrix.mirror.name }}/.mirror-tag" ]; then
+            CURRENT_TAG=$(cat "${{ matrix.mirror.name }}/.mirror-tag")
+            
+            if [ "$CURRENT_TAG" = "$LATEST_TAG" ]; then
+              echo "needs_update=false" >> $GITHUB_OUTPUT
+              echo "status=up-to-date" >> $GITHUB_OUTPUT
+              echo "Action ${{ matrix.mirror.name }} is up to date at $CURRENT_TAG"
+            else
+              echo "needs_update=true" >> $GITHUB_OUTPUT
+              echo "status=outdated" >> $GITHUB_OUTPUT
+              echo "Action ${{ matrix.mirror.name }} needs update: $CURRENT_TAG -> $LATEST_TAG"
+            fi
+            echo "current_tag=$CURRENT_TAG" >> $GITHUB_OUTPUT
+          else
+            echo "needs_update=true" >> $GITHUB_OUTPUT
+            echo "status=not-mirrored" >> $GITHUB_OUTPUT
+            echo "current_tag=not-mirrored" >> $GITHUB_OUTPUT
+            echo "Action ${{ matrix.mirror.name }} needs initial mirror"
+          fi
+
+      - name: Mirror the action
+        if: steps.upstream-check.outputs.needs_update == 'true'
+        run: |
+          if [ -d "${{ matrix.mirror.name }}" ]; then
+            rm -rf "${{ matrix.mirror.name }}"
+          fi
+
+          if [ "${{ steps.upstream-check.outputs.latest_tag }}" != "no-tag" ]; then
+            git clone --depth 1 --branch "${{ steps.upstream-check.outputs.latest_tag }}" \
+              ${{ matrix.mirror.upstream }} "${{ matrix.mirror.name }}_temp"
+          else
+            git clone --depth 1 --branch ${{ matrix.mirror.branch }} \
+              ${{ matrix.mirror.upstream }} "${{ matrix.mirror.name }}_temp"
+          fi
+
+          mv "${{ matrix.mirror.name }}_temp" "${{ matrix.mirror.name }}"
+          rm -rf "${{ matrix.mirror.name }}/.git"
+          rm -rf "${{ matrix.mirror.name }}/.github"
+
+          echo "${{ steps.upstream-check.outputs.latest_commit }}" > "${{ matrix.mirror.name }}/.mirror-version"
+          echo "${{ steps.upstream-check.outputs.latest_tag }}" > "${{ matrix.mirror.name }}/.mirror-tag"
+
+          if [ "${{ steps.check-pr.outputs.pr_exists }}" = "true" ]; then
+            git fetch origin ${{ steps.check-pr.outputs.branch_name }}
+            git checkout ${{ steps.check-pr.outputs.branch_name }}
+          else
+            git checkout -b ${{ steps.check-pr.outputs.branch_name }}
+          fi
+
+      - name: Update README in PR branch
+        if: steps.upstream-check.outputs.needs_update == 'true'
+        run: |
+          ACTION_NAME="${{ matrix.mirror.name }}"
+          NEW_VERSION=$(cat "${{ matrix.mirror.name }}/.mirror-tag" 2>/dev/null || echo "unknown")
+
+          awk -v action="$ACTION_NAME" -v version="$NEW_VERSION" '
+            BEGIN { FS="|"; OFS="|" }
+            /^\| `'"$ACTION_NAME"'`/ {
+              split($0, fields, "|")
+              fields[4] = " " version " "
+              fields[5] = " ✅ "
+              line = ""
+              for (i=1; i<=length(fields); i++) {
+                if (i == 1) line = fields[i]
+                else line = line "|" fields[i]
+              }
+              print line
+              next
+            }
+            { print }
+          ' README.md > README.tmp
+
+          mv README.tmp README.md
+
+      - name: Commit changes
+        if: steps.upstream-check.outputs.needs_update == 'true'
+        id: commit
+        run: |
+          git add .
+
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            VERSION_TAG=$(cat "${{ matrix.mirror.name }}/.mirror-tag" 2>/dev/null || echo "unknown")
+            git commit -m "Update ${{ matrix.mirror.name }} to $VERSION_TAG
+            
+            Upstream commit: ${{ steps.upstream-check.outputs.latest_commit }}
+            Source: ${{ matrix.mirror.upstream }}"
+            
+            git push origin ${{ steps.check-pr.outputs.branch_name }}
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create or update PR
+        if: steps.upstream-check.outputs.needs_update == 'true' && steps.commit.outputs.has_changes == 'true'
+        run: |
+          VERSION_TAG=$(cat "${{ matrix.mirror.name }}/.mirror-tag" 2>/dev/null || echo "unknown")
+
+          if [ "${{ steps.check-pr.outputs.pr_exists }}" = "true" ]; then
+            gh pr edit ${{ steps.check-pr.outputs.pr_number }} \
+              --title "Update ${{ matrix.mirror.name }} to $VERSION_TAG" \
+              --body "## Automated Update
+              
+              This PR updates **${{ matrix.mirror.name }}** to the latest upstream version.
+              
+              - **New version**: $VERSION_TAG
+              - **Upstream commit**: ${{ steps.upstream-check.outputs.latest_commit }}
+              - **Source**: ${{ matrix.mirror.upstream }}
+
+              ---
+              *This PR was automatically generated by the mirror update workflow.*"
+          else
+            gh pr create \
+              --title "Update ${{ matrix.mirror.name }} to $VERSION_TAG" \
+              --body "## Automated Update
+              
+              This PR updates **${{ matrix.mirror.name }}** to the latest upstream version.
+              
+              - **New version**: $VERSION_TAG
+              - **Upstream commit**: ${{ steps.upstream-check.outputs.latest_commit }}
+              - **Source**: ${{ matrix.mirror.upstream }}
+              
+              ---
+              *This PR was automatically generated by the mirror update workflow.*" \
+              --base main \
+              --head ${{ steps.check-pr.outputs.branch_name }}
+      - name: Output status for summary
+        id: status-output
+        if: always()
+        run: |
+          cat > status.json << EOF
+          {
+            "name": "${{ matrix.mirror.name }}",
+            "upstream": "${{ matrix.mirror.upstream }}",
+            "current_version": "${{ steps.upstream-check.outputs.current_tag }}",
+            "latest_version": "${{ steps.upstream-check.outputs.latest_tag }}",
+            "status": "${{ steps.upstream-check.outputs.status }}",
+            "needs_update": ${{ steps.upstream-check.outputs.needs_update }},
+            "pr_exists": ${{ steps.check-pr.outputs.pr_exists }},
+            "pr_number": "${{ steps.check-pr.outputs.pr_number || '' }}"
+          }
+          EOF
+
+          echo "status=$(cat status.json | jq -c .)" >> $GITHUB_OUTPUT
+
+  update-readme:
+    needs: [check-updates, update-mirror]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+
+      - name: Configure git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Update README table
+        run: |
+          cat > table.md << 'EOF'
+          | Action | Original Repository | Current Version | Status | Modified |
+          |--------|-------------------|-----------------|---------|-----------|
+          EOF
+
+          jq -r '.mirrors[] | @json' mirror-config.json | while read -r mirror_json; do
+            mirror=$(echo "$mirror_json" | jq -r '.')
+            name=$(echo "$mirror" | jq -r '.name')
+            upstream=$(echo "$mirror" | jq -r '.upstream')
+            repo_path=$(echo "$upstream" | sed 's|https://github.com/||g' | sed 's|\.git$||g')
+            
+            if [ -f "$name/.mirror-version" ]; then
+              current_version=$(cat "$name/.mirror-tag" 2>/dev/null || echo "unknown")
+              
+              latest_tag=$(git ls-remote --tags "$upstream" | grep -v '\^{}' | sort -V -k2 | tail -n1 | sed 's/.*\///g' || echo "no-tag")
+              current_tag=$(cat "$name/.mirror-tag" 2>/dev/null || echo "unknown")
+              
+              if [ "$current_tag" = "$latest_tag" ]; then
+                status=" ✅ "
+              else
+                pr_exists=$(gh pr list --state open --json headRefName \
+                  --jq '.[] | select(.headRefName | startswith("update-'$name'")) | .headRefName' | head -n1)
+                
+                status=" ⚠️ "
+              fi
+            else
+              current_version="error"
+              status=" ❌ "
+            fi
+            
+            modified="No"
+            
+            echo "| \`$name\` | [$repo_path](https://github.com/$repo_path) | $current_version | $status | $modified |" >> table.md
+          done
+
+          awk '
+            BEGIN { in_table = 0; printed = 0 }
+            /^## Included Actions/ { print; printed = 1; next }
+            /^| Action | Original Repository/ { in_table = 1 }
+            /^### Status/ { in_table = 0 }
+            !in_table && printed { print }
+            in_table && /^### Status Legend/ { 
+              while ((getline line < "table.md") > 0) print line
+              close("table.md")
+              print ""
+              in_table = 0
+              print
+            }
+          ' README.md > README.tmp
+
+          if ! grep -q "^| Action | Original Repository" README.tmp; then
+            cp README.md README.tmp
+          fi
+
+          mv README.tmp README.md
+
+      - name: Update last checked timestamp
+        run: |
+          timestamp=$(date -u +"%Y-%m-%d %H:%M UTC")
+
+          sed -i '/^*Last checked:/d' README.md
+
+          echo "" >> README.md
+          echo "*Last checked: $timestamp*" >> README.md
+
+      - name: Commit and push changes
+        run: |
+          git add README.md
+
+          if ! git diff --staged --quiet; then
+            git commit -m "Update mirror status"
+            
+            git push origin main
+          else
+            echo "No changes to README status table"
+          fi

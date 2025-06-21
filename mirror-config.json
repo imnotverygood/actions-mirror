@@ -1,0 +1,29 @@
+{
+    "mirrors": [
+        {
+            "name": "action-gh-release",
+            "upstream": "https://github.com/softprops/action-gh-release.git",
+            "branch": "master"
+        },
+        {
+            "name": "action-zip",
+            "upstream": "https://github.com/vimtor/action-zip.git",
+            "branch": "master"
+        },
+        {
+            "name": "actions-status-discord",
+            "upstream": "https://github.com/sarisia/actions-status-discord.git",
+            "branch": "main"
+        },
+        {
+            "name": "cache",
+            "upstream": "https://github.com/imnotverygood/cache.git",
+            "branch": "v4"
+        },
+        {
+            "name": "unity-builder",
+            "upstream": "https://github.com/game-ci/unity-builder.git",
+            "branch": "main"
+        }
+    ]
+}

@@ -300,23 +300,19 @@ jobs:
             echo "| \`$name\` | [$repo_path](https://github.com/$repo_path) | $current_version | $status | $modified |" >> table.md
           done
 
-          awk '
-            BEGIN { in_table = 0; printed = 0 }
-            /^## Included Actions/ { print; printed = 1; next }
-            /^| Action | Original Repository/ { in_table = 1 }
-            /^### Status/ { in_table = 0 }
-            !in_table && printed { print }
-            in_table && /^### Status Legend/ { 
-              while ((getline line < "table.md") > 0) print line
-              close("table.md")
-              print ""
-              in_table = 0
-              print
-            }
-          ' README.md > README.tmp
-
-          if ! grep -q "^| Action | Original Repository" README.tmp; then
-            cp README.md README.tmp
+          if grep -q "^| Action | Original Repository" README.md; then
+            START=$(grep -n "^| Action | Original Repository" README.md | cut -d: -f1)
+            NEXT_SECTION=$(awk "NR>$START && /^###|^##|^#[^#]/ {print NR; exit}" README.md)
+            
+            if [ -n "$NEXT_SECTION" ]; then
+              END=$((NEXT_SECTION - 1))
+              head -n $((START - 1)) README.md > README.tmp
+              cat table.md >> README.tmp
+              echo "" >> README.tmp
+              tail -n +$NEXT_SECTION README.md >> README.tmp
+            else
+              head -n $((START - 1)) README.md > README.tmp
+              cat table.md >> README.tmp
           fi
 
           mv README.tmp README.md

@@ -16,7 +16,6 @@ class Platform {
       PS4: 'PS4',
       XboxOne: 'XboxOne',
       tvOS: 'tvOS',
-      VisionOS: 'VisionOS',
       Switch: 'Switch',
 
       // Unsupported

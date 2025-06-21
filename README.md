@@ -8,11 +8,11 @@ A private mirror repository for commonly used GitHub Actions, maintained for use
 
 | Action | Original Repository | Current Version | Status | Modified |
 |--------|-------------------|-----------------|---------|-----------|
-| `action-gh-release` | [Link](https://github.com/softprops/action-gh-release) | v1.0.0 | ✅ | No |
-| `action-zip` | [Link](https://github.com/vimtor/action-zip) | v1.0.0 | ✅ | No |
-| `actions-status-discord` | [Link](https://github.com/sarisia/actions-status-discord) | v1.0.0 | ✅ | No |
-| `cache` | [Link](https://github.com/imnotverygood/cache) | v4.1 | ✅ | No |
-| `unity-builder` | [Link](https://github.com/game-ci/unity-builder) | v1.0.0 | ✅ | No |
+| `action-gh-release` | [softprops/action-gh-release](https://github.com/softprops/action-gh-release) | error |  ❌  | No |
+| `action-zip` | [vimtor/action-zip](https://github.com/vimtor/action-zip) | error |  ❌  | No |
+| `actions-status-discord` | [sarisia/actions-status-discord](https://github.com/sarisia/actions-status-discord) | error |  ❌  | No |
+| `cache` | [imnotverygood/cache](https://github.com/imnotverygood/cache) | v4.1 |  ⚠️  | No |
+| `unity-builder` | [game-ci/unity-builder](https://github.com/game-ci/unity-builder) | error |  ❌  | No |
 
 ### Status
 > ✅ Up to date | ⚠️ Update available
@@ -50,4 +50,5 @@ Individual actions retain their original licenses. See each action directory for
 
 
 
-*Last checked: 2025-06-21 12:01 UTC*
+
+*Last checked: 2025-06-21 12:12 UTC*

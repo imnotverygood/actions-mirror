@@ -8,7 +8,7 @@ A private mirror repository for commonly used GitHub Actions, maintained for use
 
 | Action | Original Repository | Current Version | Status | Modified |
 |--------|-------------------|-----------------|---------|-----------|
-| `action-gh-release` | [softprops/action-gh-release](https://github.com/softprops/action-gh-release) | error |  ❌  | No |
+| `action-gh-release` | [softprops/action-gh-release](https://github.com/softprops/action-gh-release) | v2.3.2 | ✅ | No |
 | `action-zip` | [vimtor/action-zip](https://github.com/vimtor/action-zip) | v1.2 | ✅ | No |
 | `actions-status-discord` | [sarisia/actions-status-discord](https://github.com/sarisia/actions-status-discord) | v1.15.3 | ✅ | No |
 | `cache` | [imnotverygood/cache](https://github.com/imnotverygood/cache) | v4.2 | ✅ | No |

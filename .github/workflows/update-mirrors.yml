@@ -87,6 +87,7 @@ jobs:
             sort -V | \
             tail -n1 || echo "no-tag")
 
+          LATEST_TAG=$(echo "$LATEST_TAG" | sed 's/-src$//')
           echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
 
           if [ "$LATEST_TAG" != "no-tag" ]; then

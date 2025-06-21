@@ -1,0 +1,112 @@
+name: Sync PRs After Merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync-open-prs:
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'update-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract merged action name
+        id: extract
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          ACTION_NAME=$(echo "$BRANCH" | sed 's/^update-//' | sed 's/-[0-9]\{8\}-[0-9]\{6\}$//')
+          echo "action_name=$ACTION_NAME" >> $GITHUB_OUTPUT
+
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Get merged version info
+        id: version-info
+        run: |
+          ACTION_NAME="${{ steps.extract.outputs.action_name }}"
+          if [ -f "$ACTION_NAME/.mirror-tag" ]; then
+            VERSION=$(cat "$ACTION_NAME/.mirror-tag")
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "Error: Version file not found for $ACTION_NAME"
+            exit 1
+          fi
+
+      - name: Update other open PRs
+        run: |
+          ACTION_NAME="${{ steps.extract.outputs.action_name }}"
+          VERSION="${{ steps.version-info.outputs.version }}"
+
+          gh pr list --state open --json number,headRefName --jq '.[] | select(.headRefName | startswith("update-"))' | \
+          jq -r '[.number, .headRefName] | @tsv' | \
+          while IFS=$'\t' read -r PR_NUMBER BRANCH_NAME; do
+            # Skip if this is a PR for the same action that was just merged
+            if [[ "$BRANCH_NAME" == "update-$ACTION_NAME-"* ]]; then
+              echo "Skipping PR #$PR_NUMBER for $ACTION_NAME (same action)"
+              continue
+            fi
+            
+            echo "Updating PR #$PR_NUMBER on branch $BRANCH_NAME"
+            
+            git fetch origin "$BRANCH_NAME"
+            git checkout "$BRANCH_NAME"
+            
+            git pull origin main --no-edit || {
+              echo "Merge conflicts detected in PR #$PR_NUMBER"
+              git checkout --theirs "$ACTION_NAME" || true
+              git add "$ACTION_NAME" || true
+              
+              git checkout main -- README.md mirror-config.json
+              
+              PR_ACTION=$(echo "$BRANCH_NAME" | sed 's/^update-//' | sed 's/-[0-9]\{8\}-[0-9]\{6\}$//')
+              if [ -f "$PR_ACTION/.mirror-tag" ]; then
+                PR_VERSION=$(cat "$PR_ACTION/.mirror-tag")
+                
+                awk -v action="$PR_ACTION" -v version="$PR_VERSION" '
+                  BEGIN { FS="|"; OFS="|" }
+                  /^\| `'"$PR_ACTION"'`/ {
+                    split($0, fields, "|")
+                    fields[4] = " " version " "
+                    fields[5] = " ✅ "
+                    line = ""
+                    for (i=1; i<=length(fields); i++) {
+                      if (i == 1) line = fields[i]
+                      else line = line "|" fields[i]
+                    }
+                    print line
+                    next
+                  }
+                  { print }
+                ' README.md > README.tmp
+                mv README.tmp README.md
+              fi
+              
+              git add README.md mirror-config.json
+              git commit -m "Merge main and resolve conflicts after $ACTION_NAME update to $VERSION"
+            }
+            
+            # Push the updated branch
+            git push origin "$BRANCH_NAME" || {
+              echo "Failed to push updates to PR #$PR_NUMBER"
+            }
+            
+            # Add a comment to the PR
+            gh pr comment $PR_NUMBER --body "🔄 **Automated Update**
+
+            This PR has been automatically updated after merging #${{ github.event.pull_request.number }} which updated \`$ACTION_NAME\` to version \`$VERSION\`.
+
+            Please review the changes to ensure everything looks correct."
+                      done

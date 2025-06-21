@@ -76,6 +76,8 @@ jobs:
           ACTION_NAME="${{ steps.extract.outputs.action_name }}"
           VERSION="${{ steps.version-info.outputs.version }}"
 
+          git config --global pull.rebase false
+
           gh pr list --state open --json number,headRefName --jq '.[] | select(.headRefName | startswith("update-"))' | \
           jq -r '[.number, .headRefName] | @tsv' | \
           while IFS=$'\t' read -r PR_NUMBER BRANCH_NAME; do
@@ -90,9 +92,10 @@ jobs:
             git fetch origin "$BRANCH_NAME"
             git checkout "$BRANCH_NAME"
             
-            git pull origin main --no-edit || {
+            git merge origin/main --no-edit || {
               echo "Merge conflicts detected in PR #$PR_NUMBER"
-              git checkout --theirs "$ACTION_NAME" || true
+              
+              git checkout main -- "$ACTION_NAME" || true
               git add "$ACTION_NAME" || true
               
               git checkout main -- README.md mirror-config.json
@@ -120,7 +123,7 @@ jobs:
                 mv README.tmp README.md
               fi
               
-              git add README.md mirror-config.json
+              git add -A
               git commit -m "Merge main and resolve conflicts after $ACTION_NAME update to $VERSION"
             }
             

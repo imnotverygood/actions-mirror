@@ -4,6 +4,20 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      action_name:
+        description: "Name of the updated action"
+        required: true
+        type: string
+      version:
+        description: "Version that the action was updated to"
+        required: true
+        type: string
+      pr_number:
+        description: "PR number that was merged (optional, for refs)"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -11,15 +25,21 @@ permissions:
 
 jobs:
   sync-open-prs:
-    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'update-')
+    if: |
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'update-'))
     runs-on: ubuntu-latest
     steps:
       - name: Extract merged action name
         id: extract
         run: |
-          BRANCH="${{ github.event.pull_request.head.ref }}"
-          ACTION_NAME=$(echo "$BRANCH" | sed 's/^update-//' | sed 's/-[0-9]\{8\}-[0-9]\{6\}$//')
-          echo "action_name=$ACTION_NAME" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "action_name=${{ github.event.inputs.action_name }}" >> $GITHUB_OUTPUT
+          else
+            BRANCH="${{ github.event.pull_request.head.ref }}"
+            ACTION_NAME=$(echo "$BRANCH" | sed 's/^update-//' | sed 's/-[0-9]\{8\}-[0-9]\{6\}$//')
+            echo "action_name=$ACTION_NAME" >> $GITHUB_OUTPUT
+          fi
 
       - name: Checkout main branch
         uses: actions/checkout@v4
@@ -36,13 +56,17 @@ jobs:
       - name: Get merged version info
         id: version-info
         run: |
-          ACTION_NAME="${{ steps.extract.outputs.action_name }}"
-          if [ -f "$ACTION_NAME/.mirror-tag" ]; then
-            VERSION=$(cat "$ACTION_NAME/.mirror-tag")
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
           else
-            echo "Error: Version file not found for $ACTION_NAME"
-            exit 1
+            ACTION_NAME="${{ steps.extract.outputs.action_name }}"
+            if [ -f "$ACTION_NAME/.mirror-tag" ]; then
+              VERSION=$(cat "$ACTION_NAME/.mirror-tag")
+              echo "version=$VERSION" >> $GITHUB_OUTPUT
+            else
+              echo "Error: Version file not found for $ACTION_NAME"
+              exit 1
+            fi
           fi
 
       - name: Update other open PRs
@@ -105,10 +129,21 @@ jobs:
               echo "Failed to push updates to PR #$PR_NUMBER"
             }
             
-            # Add a comment to the PR
-            gh pr comment $PR_NUMBER --body "🔄 **Automated Update**
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              MERGE_REF="${{ github.event.inputs.pr_number || 'manual trigger' }}"
+              gh pr comment $PR_NUMBER --body "**Update**
+
+            This PR has been automatically updated after \`$ACTION_NAME\` was updated to version \`$VERSION\`.
+
+            - Triggered manually via workflow_dispatch
+            - Merged PR: ${MERGE_REF}
+
+            Please review the changes to ensure everything looks correct."
+                        else
+                          gh pr comment $PR_NUMBER --body "**Update**
 
             This PR has been automatically updated after merging #${{ github.event.pull_request.number }} which updated \`$ACTION_NAME\` to version \`$VERSION\`.
 
             Please review the changes to ensure everything looks correct."
+            fi
                       done

@@ -46,6 +46,8 @@ jobs:
           fi
 
       - name: Update other open PRs
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           ACTION_NAME="${{ steps.extract.outputs.action_name }}"
           VERSION="${{ steps.version-info.outputs.version }}"

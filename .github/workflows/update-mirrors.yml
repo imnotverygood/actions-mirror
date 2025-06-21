@@ -313,6 +313,7 @@ jobs:
             else
               head -n $((START - 1)) README.md > README.tmp
               cat table.md >> README.tmp
+            fi
           fi
 
           mv README.tmp README.md

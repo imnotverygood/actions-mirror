@@ -12,7 +12,7 @@ A private mirror repository for commonly used GitHub Actions, maintained for use
 | `action-zip` | [vimtor/action-zip](https://github.com/vimtor/action-zip) | v1.2 |  ✅  | No |
 | `actions-status-discord` | [sarisia/actions-status-discord](https://github.com/sarisia/actions-status-discord) | v1.15.3 |  ⚠️  | No |
 | `cache` | [imnotverygood/cache](https://github.com/imnotverygood/cache) | v4.2 |  ✅  | No |
-| `unity-builder` | [game-ci/unity-builder](https://github.com/game-ci/unity-builder) | v4.5.0 |  ✅  | No |
+| `unity-builder` | [game-ci/unity-builder](https://github.com/game-ci/unity-builder) | v4.5.0 |  ⚠️  | No |
 
 ### Status
 > ✅ Up to date | ⚠️ Update available
@@ -154,4 +154,5 @@ Individual actions retain their original licenses. See each action directory for
 
 
 
-*Last checked: 2025-09-30 02:55 UTC*
+
+*Last checked: 2025-10-01 03:08 UTC*

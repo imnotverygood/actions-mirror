@@ -6103,7 +6103,10 @@ class Docker {
             "${overrideCommands !== '' ? overrideCommands : `/entrypoint.sh`}"`;
     }
     static getWindowsCommand(image, parameters) {
-        const { workspace, actionFolder, gitPrivateToken, dockerWorkspacePath, dockerCpuLimit, dockerMemoryLimit, dockerIsolationMode, } = parameters;
+        const { workspace, actionFolder, runnerTempPath, gitPrivateToken, dockerWorkspacePath, dockerCpuLimit, dockerMemoryLimit, dockerIsolationMode, } = parameters;
+        const githubHome = node_path_1.default.join(runnerTempPath, '_github_home');
+        if (!(0, node_fs_1.existsSync)(githubHome))
+            (0, node_fs_1.mkdirSync)(githubHome);
         return `docker run \
             --workdir c:${dockerWorkspacePath} \
             --rm \
@@ -6111,6 +6114,7 @@ class Docker {
             --env GITHUB_WORKSPACE=c:${dockerWorkspacePath} \
             ${gitPrivateToken ? `--env GIT_PRIVATE_TOKEN="${gitPrivateToken}"` : ''} \
             --volume "${workspace}":"c:${dockerWorkspacePath}" \
+            --volume "${githubHome}":"C:/githubhome" \
             --volume "c:/regkeys":"c:/regkeys" \
             --volume "C:/Program Files/Microsoft Visual Studio":"C:/Program Files/Microsoft Visual Studio" \
             --volume "C:/Program Files (x86)/Microsoft Visual Studio":"C:/Program Files (x86)/Microsoft Visual Studio" \
@@ -6548,6 +6552,7 @@ class ImageTag {
             android: 'android',
             ios: 'ios',
             tvos: 'appletv',
+            visionos: 'visionos',
             facebook: 'facebook',
         };
     }
@@ -6565,7 +6570,7 @@ class ImageTag {
         }
     }
     static getTargetPlatformToTargetPlatformSuffixMap(platform, version, providerStrategy) {
-        const { generic, webgl, mac, windows, windowsIl2cpp, wsaPlayer, linux, linuxIl2cpp, android, ios, tvos, facebook } = ImageTag.targetPlatformSuffixes;
+        const { generic, webgl, mac, windows, windowsIl2cpp, wsaPlayer, linux, linuxIl2cpp, android, ios, tvos, visionos, facebook, } = ImageTag.targetPlatformSuffixes;
         const [major, minor] = version.split('.').map((digit) => Number(digit));
         // @see: https://docs.unity3d.com/ScriptReference/BuildTarget.html
         switch (platform) {
@@ -6617,6 +6622,11 @@ class ImageTag {
                     throw new Error(`tvOS can only be built on Windows or macOS base OS`);
                 }
                 return tvos;
+            case platform_1.default.types.VisionOS:
+                if (process.platform !== 'darwin') {
+                    throw new Error(`visionOS can only be built on a macOS base OS`);
+                }
+                return visionos;
             case platform_1.default.types.Switch:
                 return windows;
             // Unsupported
@@ -7398,6 +7408,9 @@ class SetupMac {
             case 'tvOS':
                 moduleArgument.push('--module', 'appletv');
                 break;
+            case 'VisionOS':
+                moduleArgument.push('--module', 'visionos');
+                break;
             case 'StandaloneOSX':
                 moduleArgument.push('--module', 'mac-il2cpp');
                 break;
@@ -7610,6 +7623,7 @@ class Platform {
             PS4: 'PS4',
             XboxOne: 'XboxOne',
             tvOS: 'tvOS',
+            VisionOS: 'VisionOS',
             Switch: 'Switch',
             // Unsupported
             Lumin: 'Lumin',
